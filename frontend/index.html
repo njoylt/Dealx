@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="lt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>DealFinder 🇱🇹</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #0a0a0f;
+    --card: #13131a;
+    --card2: #1a1a24;
+    --accent: #7c3aed;
+    --accent2: #a855f7;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --orange: #f97316;
+    --red: #ef4444;
+    --text: #f1f5f9;
+    --muted: #64748b;
+    --border: #1e1e2e;
+  }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; min-height: 100vh; }
+
+  /* Header */
+  .header { background: linear-gradient(135deg, #1a0533 0%, #0d1117 100%); padding: 16px; border-bottom: 1px solid #2d1b69; position: sticky; top: 0; z-index: 100; }
+  .header-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .logo { font-size: 20px; font-weight: 800; background: linear-gradient(135deg, #a855f7, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .settings-btn { background: var(--card2); border: 1px solid #2d1b69; color: var(--muted); padding: 6px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+
+  /* Stats bar */
+  .stats-bar { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; scrollbar-width: none; }
+  .stats-bar::-webkit-scrollbar { display: none; }
+  .stat-chip { background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 12px; white-space: nowrap; flex-shrink: 0; }
+  .stat-chip span { color: var(--accent2); font-weight: 700; }
+
+  /* Filters */
+  .filters { padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--border); display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; }
+  .filters::-webkit-scrollbar { display: none; }
+  .filter-btn { background: var(--card2); border: 1px solid var(--border); color: var(--muted); padding: 7px 14px; border-radius: 20px; font-size: 13px; cursor: pointer; white-space: nowrap; flex-shrink: 0; transition: all 0.2s; }
+  .filter-btn.active { background: var(--accent); border-color: var(--accent2); color: white; }
+
+  /* Sort row */
+  .sort-row { padding: 10px 16px; display: flex; gap: 8px; align-items: center; }
+  .sort-label { font-size: 12px; color: var(--muted); }
+  .sort-btn { background: none; border: 1px solid var(--border); color: var(--muted); padding: 4px 10px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .sort-btn.active { border-color: var(--accent2); color: var(--accent2); }
+
+  /* Cards */
+  .listings { padding: 0 12px 80px; display: flex; flex-direction: column; gap: 10px; }
+
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; transition: transform 0.15s; }
+  .card:active { transform: scale(0.98); }
+
+  .card-inner { display: flex; gap: 0; }
+  .card-img { width: 110px; min-width: 110px; height: 110px; object-fit: cover; background: var(--card2); }
+  .card-img-placeholder { width: 110px; min-width: 110px; height: 110px; background: var(--card2); display: flex; align-items: center; justify-content: center; font-size: 32px; }
+
+  .card-body { flex: 1; padding: 10px 12px; min-width: 0; }
+  .card-title { font-size: 14px; font-weight: 600; line-height: 1.3; margin-bottom: 6px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+
+  .card-prices { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .price-main { font-size: 18px; font-weight: 800; color: var(--green); }
+  .price-market { font-size: 12px; color: var(--muted); text-decoration: line-through; }
+  .discount-badge { background: #16a34a22; color: var(--green); border: 1px solid #16a34a44; padding: 2px 7px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+
+  .card-meta { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .source-badge { background: var(--card2); border: 1px solid var(--border); padding: 2px 7px; border-radius: 5px; font-size: 10px; color: var(--muted); }
+  .location-text { font-size: 11px; color: var(--muted); }
+
+  .score-bar { padding: 8px 12px; border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+  .score-track { flex: 1; height: 5px; background: var(--card2); border-radius: 3px; overflow: hidden; }
+  .score-fill { height: 100%; border-radius: 3px; transition: width 0.5s ease; }
+  .score-label { font-size: 12px; font-weight: 700; min-width: 60px; text-align: right; }
+  .verdict-text { font-size: 11px; color: var(--muted); }
+
+  /* Score colors */
+  .s90 { color: #22c55e; } .sf90 { background: #22c55e; }
+  .s75 { color: #84cc16; } .sf75 { background: #84cc16; }
+  .s60 { color: #eab308; } .sf60 { background: #eab308; }
+  .s40 { color: #f97316; } .sf40 { background: #f97316; }
+  .s20 { color: #ef4444; } .sf20 { background: #ef4444; }
+  .s0  { color: #7f1d1d; } .sf0  { background: #7f1d1d; }
+
+  /* Link */
+  .card a { text-decoration: none; color: inherit; display: block; }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 60px 20px; color: var(--muted); }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+  .empty h3 { font-size: 18px; margin-bottom: 8px; color: var(--text); }
+
+  /* Loading */
+  .loading { text-align: center; padding: 40px; }
+  .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent2); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 12px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Scrape button */
+  .fab { position: fixed; bottom: 20px; right: 16px; background: linear-gradient(135deg, var(--accent), var(--accent2)); color: white; border: none; width: 56px; height: 56px; border-radius: 28px; font-size: 22px; cursor: pointer; box-shadow: 0 4px 20px #7c3aed55; z-index: 50; transition: transform 0.2s; }
+  .fab:active { transform: scale(0.92); }
+  .fab.spinning { animation: spin 1s linear infinite; }
+
+  /* Settings modal */
+  .modal { display: none; position: fixed; inset: 0; background: #000a; z-index: 200; align-items: flex-end; }
+  .modal.open { display: flex; }
+  .modal-box { background: var(--card); border-radius: 20px 20px 0 0; padding: 20px; width: 100%; max-height: 70vh; overflow-y: auto; }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  .modal-close { float: right; background: none; border: none; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .input-group { margin-bottom: 14px; }
+  .input-label { font-size: 13px; color: var(--muted); margin-bottom: 6px; display: block; }
+  .input-field { width: 100%; background: var(--card2); border: 1px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: 10px; font-size: 14px; }
+  .save-btn { width: 100%; background: var(--accent); color: white; border: none; padding: 13px; border-radius: 12px; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 8px; }
+
+  /* Error toast */
+  .toast { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); background: #1a1a24; border: 1px solid #ef444455; color: #ef4444; padding: 10px 18px; border-radius: 10px; font-size: 13px; z-index: 300; display: none; }
+  .toast.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-top">
+    <div class="logo">🔥 DealFinder LT</div>
+    <button class="settings-btn" onclick="openSettings()">⚙️ API</button>
+  </div>
+  <div class="stats-bar" id="statsBar">
+    <div class="stat-chip">Kraunama...</div>
+  </div>
+</div>
+
+<div class="filters" id="filters">
+  <button class="filter-btn active" onclick="setCategory('')">🔥 Visi</button>
+  <button class="filter-btn" onclick="setCategory('tech')">📱 Tech</button>
+  <button class="filter-btn" onclick="setCategory('auto')">🚗 Auto</button>
+  <button class="filter-btn" onclick="setCategory('batai')">👟 Batai</button>
+  <button class="filter-btn" onclick="setCategory('drabuziai')">👕 Drabužiai</button>
+  <button class="filter-btn" onclick="setCategory('namai')">🏠 Namai</button>
+  <button class="filter-btn" onclick="setCategory('sportas')">⚽ Sportas</button>
+</div>
+
+<div class="sort-row">
+  <span class="sort-label">Rikiuoti:</span>
+  <button class="sort-btn active" onclick="setSort('score')">🔥 Deal</button>
+  <button class="sort-btn" onclick="setSort('price')">💶 Kaina</button>
+  <button class="sort-btn" onclick="setSort('newest')">🆕 Nauji</button>
+  <button class="sort-btn" onclick="setSort('discount')">% Nuolaida</button>
+</div>
+
+<div class="listings" id="listings">
+  <div class="loading"><div class="spinner"></div><p style="color:#64748b">Jungiamasi...</p></div>
+</div>
+
+<button class="fab" id="fab" onclick="triggerScrape()" title="Atnaujinti skelbimai">🔄</button>
+
+<!-- Settings modal -->
+<div class="modal" id="settingsModal">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeSettings()">✕</button>
+    <div class="modal-title">⚙️ Nustatymai</div>
+    <div class="input-group">
+      <label class="input-label">Serverio URL (Render.com)</label>
+      <input class="input-field" id="apiUrl" type="url" placeholder="https://dealfinder-api-xxx.onrender.com">
+    </div>
+    <button class="save-btn" onclick="saveSettings()">💾 Išsaugoti</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let API_URL = localStorage.getItem('df_api_url') || '';
+let currentCategory = '';
+let currentSort = 'score';
+
+function getScoreClass(score) {
+  if (score >= 90) return 's90';
+  if (score >= 75) return 's75';
+  if (score >= 60) return 's60';
+  if (score >= 40) return 's40';
+  if (score >= 20) return 's20';
+  return 's0';
+}
+function getScoreFillClass(score) { return 'f' + getScoreClass(score).slice(1); }
+
+function getEmoji(source) {
+  if (source === 'skelbiu') return '🇱🇹';
+  if (source === 'vinted') return '🛍️';
+  if (source === 'facebook') return '📘';
+  return '🔗';
+}
+
+function getCategoryEmoji(cat) {
+  const map = { tech:'📱', auto:'🚗', batai:'👟', drabuziai:'👕', namai:'🏠', sportas:'⚽', kita:'📦' };
+  return map[cat] || '📦';
+}
+
+function renderCard(item) {
+  const analysis = item.ai_analysis ? JSON.parse(item.ai_analysis) : {};
+  const scoreClass = getScoreClass(item.score || 0);
+  const fillClass = 'sf' + scoreClass.slice(1);
+  const discount = item.discount_pct > 0 ? `<span class="discount-badge">-${item.discount_pct}%</span>` : '';
+  const marketPrice = item.market_price ? `<span class="price-market">${Math.round(item.market_price)} €</span>` : '';
+  const img = item.image_url
+    ? `<img class="card-img" src="${item.image_url}" onerror="this.style.display='none'" loading="lazy">`
+    : `<div class="card-img-placeholder">${getCategoryEmoji(item.category)}</div>`;
+
+  return `
+  <div class="card">
+    <a href="${item.url}" target="_blank" rel="noopener">
+      <div class="card-inner">
+        ${img}
+        <div class="card-body">
+          <div class="card-title">${item.title}</div>
+          <div class="card-prices">
+            <span class="price-main">${item.price} €</span>
+            ${marketPrice}
+            ${discount}
+          </div>
+          <div class="card-meta">
+            <span class="source-badge">${getEmoji(item.source)} ${item.source}</span>
+            ${item.location ? `<span class="location-text">📍 ${item.location}</span>` : ''}
+          </div>
+        </div>
+      </div>
+      <div class="score-bar">
+        <div class="score-track">
+          <div class="score-fill ${fillClass}" style="width:${item.score || 0}%"></div>
+        </div>
+        <div>
+          <div class="score-label ${scoreClass}">${item.score || 0}/100</div>
+          <div class="verdict-text">${analysis.verdict || ''}</div>
+        </div>
+      </div>
+    </a>
+  </div>`;
+}
+
+async function loadListings() {
+  if (!API_URL) {
+    document.getElementById('listings').innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">⚙️</div>
+        <h3>Nustatyk serverį</h3>
+        <p>Spausk ⚙️ API mygtuką viršuje ir įvesk Render.com URL</p>
+      </div>`;
+    return;
+  }
+
+  document.getElementById('listings').innerHTML = '<div class="loading"><div class="spinner"></div><p style="color:#64748b">Kraunama...</p></div>';
+
+  try {
+    const params = new URLSearchParams({ sort: currentSort, limit: 50 });
+    if (currentCategory) params.append('category', currentCategory);
+
+    const res = await fetch(`${API_URL}/api/listings?${params}`);
+    const data = await res.json();
+
+    if (!data.listings?.length) {
+      document.getElementById('listings').innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">🔍</div>
+          <h3>Skelbimai nerasti</h3>
+          <p>Spausk 🔄 mygtuką kad pradėti scrapingą</p>
+        </div>`;
+      return;
+    }
+
+    document.getElementById('listings').innerHTML = data.listings.map(renderCard).join('');
+    loadStats();
+  } catch (err) {
+    document.getElementById('listings').innerHTML = `
+      <div class="empty">
+        <div class="empty-icon">❌</div>
+        <h3>Serveris nepasiekiamas</h3>
+        <p>${err.message}</p>
+      </div>`;
+  }
+}
+
+async function loadStats() {
+  try {
+    const res = await fetch(`${API_URL}/api/stats`);
+    const s = await res.json();
+    document.getElementById('statsBar').innerHTML = `
+      <div class="stat-chip">Iš viso: <span>${s.total}</span></div>
+      <div class="stat-chip">🔥 Hot deals: <span>${s.hotDeals}</span></div>
+      <div class="stat-chip">Avg score: <span>${Math.round(s.avgScore || 0)}</span></div>
+      <div class="stat-chip">Geriausias: <span>${s.bestScore}</span></div>`;
+  } catch {}
+}
+
+async function triggerScrape() {
+  if (!API_URL) { openSettings(); return; }
+  const fab = document.getElementById('fab');
+  fab.classList.add('spinning');
+  showToast('🔄 Scraping pradėtas...', 'info');
+  try {
+    await fetch(`${API_URL}/api/scrape`, { method: 'POST' });
+    setTimeout(() => { loadListings(); fab.classList.remove('spinning'); }, 5000);
+  } catch (err) {
+    fab.classList.remove('spinning');
+    showToast('❌ ' + err.message);
+  }
+}
+
+function setCategory(cat) {
+  currentCategory = cat;
+  document.querySelectorAll('.filter-btn').forEach((b, i) => {
+    b.classList.toggle('active', b.onclick.toString().includes(`'${cat}'`));
+  });
+  loadListings();
+}
+
+function setSort(sort) {
+  currentSort = sort;
+  document.querySelectorAll('.sort-btn').forEach(b => {
+    b.classList.toggle('active', b.onclick.toString().includes(`'${sort}'`));
+  });
+  loadListings();
+}
+
+function openSettings() {
+  document.getElementById('apiUrl').value = API_URL;
+  document.getElementById('settingsModal').classList.add('open');
+}
+function closeSettings() { document.getElementById('settingsModal').classList.remove('open'); }
+function saveSettings() {
+  API_URL = document.getElementById('apiUrl').value.trim().replace(/\/$/, '');
+  localStorage.setItem('df_api_url', API_URL);
+  closeSettings();
+  loadListings();
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// Init
+loadListings();
+setInterval(loadListings, 60000); // Auto refresh kas minutę
+</script>
+</body>
+</html>
