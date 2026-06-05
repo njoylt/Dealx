@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: dealfinder-api
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SCRAPE_INTERVAL
+        value: 30
+      - key: HEADLESS
+        value: true
+      - key: NODE_ENV
+        value: production

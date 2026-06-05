@@ -1,0 +1,25 @@
+{
+  "name": "dealfinder-api",
+  "version": "1.2.0",
+  "description": "AI-powered deal finder for Lithuanian marketplaces",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "cors": "^2.8.5",
+    "cheerio": "^1.0.0-rc.12",
+    "node-cron": "^3.0.3",
+    "sqlite3": "^5.1.7",
+    "axios": "^1.7.2",
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  },
+  "engines": {
+    "node": "20.x"
+  }
+}
