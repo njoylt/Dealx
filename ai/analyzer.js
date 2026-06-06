@@ -1,10 +1,7 @@
-require('dotenv').config();
 const axios = require('axios');
 
+const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
 
-// Prieš tai buvo: const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
-// Geriausi rinkos kainos šablonai analizavimui
 const MARKET_PRICES = {
   'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350,
   'samsung galaxy s24': 850, 'samsung galaxy s23': 600, 'samsung galaxy s22': 400,
@@ -20,124 +17,84 @@ const MARKET_PRICES = {
 function estimateMarketPrice(title) {
   const t = title.toLowerCase();
   for (const [k, v] of Object.entries(MARKET_PRICES)) {
-    if (t.includes(k)) return Math.round(v * (0.9 + Math.random() * 0.2));
+    if (t.includes(k)) {
+      return Math.round(v * (0.9 + Math.random() * 0.2));
+    }
   }
   return null;
 }
 
 function detectCategory(title) {
   const t = title.toLowerCase();
-  if (/bmw|audi|vw|toyota|honda|mercedes|skoda|auto/.test(t)) return 'auto';
-  if (/iphone|samsung|macbook|ps5|xbox|airpods|ipad|telefon/.test(t)) return 'tech';
-  if (/nike|adidas|jordan|batai|sneaker|new balance/.test(t)) return 'batai';
-  if (/striuke|megztinis|north face|drabuz/.test(t)) return 'drabuziai';
-  if (/dyson|sofa|baldai|spinta/.test(t)) return 'namai';
+  if (/bmw|audi|vw|toyota|honda|mercedes|skoda|auto|dacia|ford/.test(t)) return 'auto';
+  if (/iphone|samsung|macbook|ps5|xbox|airpods|ipad|telefon|nokia/.test(t)) return 'tech';
+  if (/nike|adidas|jordan|batai|sneaker|new balance|puma|reebok/.test(t)) return 'batai';
+  if (/striuke|megztin|north face|drabuz|marsk|kelnes|kepure/.test(t)) return 'drabuziai';
+  if (/dyson|sofa|baldai|spinta|stalas|kede|lentyna|lovele/.test(t)) return 'namai';
+  if (/futbol|kamuol|rakete|begimo|treniruote|sporto/.test(t)) return 'sportas';
   return 'kita';
 }
 
-function analyzeLocally(listing) {
-  const price = parseFloat(listing.price);
-  const marketPrice = parseFloat(listing.market_price || listing.market_market_price);
-
-  if (!marketPrice || isNaN(price) || isNaN(marketPrice)) {
-    return {
-      score: 50,
-      verdict: "VIDUTINIS",
-      reason: "Trūksta rinkos kainos duomenų tiksliam vietiniam įvertinimui.",
-      risk: "VIDUTINIS"
-    };
+function simpleScore(price, marketPrice) {
+  if (!marketPrice) {
+    return { score: 50, verdict: 'VIDUTINIS', reason: 'Nera rinkos kainos' };
   }
-
-  const discountPct = ((marketPrice - price) / marketPrice) * 100;
-
-  let score = 50;
-  let verdict = "VIDUTINIS";
-  let risk = "VIDUTINIS";
-  let reason = `Kaina (${price}€) yra arti rinkos vidurkio (${marketPrice}€).`;
-
-  if (discountPct >= 35) {
-    score = 95;
-    verdict = "IŠSKIRTINIS";
-    risk = "AUKŠTAS";
-    reason = `Kaina net ${Math.round(discountPct)}% žemesnė nei rinkos vertė. Būtina tikrinti!`;
-  } else if (discountPct >= 15) {
-    score = 80;
-    verdict = "PUIKUS";
-    risk = "ŽEMAS";
-    reason = `Geras pasiūlymas, kaina apie ${Math.round(discountPct)}% žemesnė už rinką.`;
-  } else if (discountPct > 0) {
-    score = 65;
-    verdict = "GERAS";
-    risk = "ŽEMAS";
-    reason = `Šiek tiek pigiau nei įprastai rinkoje.`;
-  } else if (discountPct < -10) {
-    score = 25;
-    verdict = "PRASTAS";
-    risk = "ŽEMAS";
-    reason = `Kaina yra pastebimai užkelta virš rinkos vidurkio.`;
+  
+  const d = ((marketPrice - price) / marketPrice) * 100;
+  
+  if (d >= 40) {
+    return { score: 90, verdict: 'ISZKIRTINIS', reason: Math.round(d) + '% pigiau!' };
   }
-
-  return { score, verdict, reason, risk };
+  if (d >= 25) {
+    return { score: 78, verdict: 'PUIKUS', reason: Math.round(d) + '% pigiau' };
+  }
+  if (d >= 10) {
+    return { score: 65, verdict: 'GERAS', reason: 'Siek tiek pigiau' };
+  }
+  if (d >= 0) {
+    return { score: 45, verdict: 'VIDUTINIS', reason: 'Rinkos kaina' };
+  }
+  
+  return { score: 30, verdict: 'BRANGESNIS', reason: 'Brangesnis nei rinka' };
 }
 
-// Sukuriame funkciją, kuri eksportuojama būtent tokiu vardu, kokio reikalauja skreiperiai
 async function analyzeWithGemini(listing) {
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey || apiKey === 'your_gemini_api_key_here' || apiKey.trim() === '' || apiKey.includes('tavo_gemini')) {
-    return analyzeLocally(listing);
+  if (!GEMINI_KEY) {
+    return simpleScore(listing.price, listing.market_price);
   }
 
-  const retries = 2;
+  try {
+    const prompt = 'Ivertink sj prekybos skelbima (tik JSON atsakymas): Pavadinimas: ' + listing.title + ' Kaina: ' + listing.price + ' Rinkos kaina: ' + (listing.market_price || '?') + ' Kategorija: ' + (listing.category || 'kita') + ' Grazink JSON: {"score": <0-100>, "verdict": "<ISZKIRTINIS|PUIKUS|GERAS|VIDUTINIS|BRANGESNIS>", "reason": "<trumpa>"}' ;
 
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await axios.post(
-        `${GEMINI_URL}?key=${apiKey}`,
-        {
-          contents: [{
-            parts: [{
-              text: `Įvertink Vinted skelbimą: "${listing.title}". Kaina: ${listing.price}€, Rinkos kaina: ${listing.market_price || 'nežinoma'}€. Aprašymas: "${listing.description || ''}". Grąžink TIK JSON formatu lietuviškai: {"score":<0-100>,"verdict":"IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS","reason":"<1 sakinys>","risk":"ŽEMAS|VIDUTINIS|AUKŠTAS"}`
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 200
-          }
-        },
-        { timeout: 7000 }
-      );
+    const res = await axios.post(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=' + GEMINI_KEY,
+      {
+        contents: [{
+          parts: [{ text: prompt }]
+        }]
+      },
+      { timeout: 8000 }
+    );
 
-      let text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-      text = text.replace(/^```json/i, '').replace(/```$/, '').trim();
-
-      const parsed = JSON.parse(text);
-
-      if (parsed.score !== undefined && parsed.verdict) {
+    const text = res.data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const match = text.match(/\{[\s\S]*\}/);
+    
+    if (match) {
+      const parsed = JSON.parse(match[0]);
+      if (typeof parsed.score === 'number' && parsed.verdict && parsed.reason) {
         return parsed;
       }
-      throw new Error("Nepilnas JSON atsakas");
-
-    } catch (err) {
-      const status = err.response?.status;
-      if (status === 429 || status === 503) {
-        console.warn(`[AI Analyzer] Gemini limitas (${status}). Bandymas ${i + 1}/${retries}`);
-        await new Promise(r => setTimeout(r, 3000 * (i + 1)));
-        continue;
-      }
-      console.error(`[AI Analyzer] Gemini klaida:`, err.message);
-      break;
     }
+  } catch (err) {
+    console.error('[Gemini] Klaida:', err.message);
   }
 
-  console.log(`[AI Analyzer] Naudojama vietinė analizė skelbimui: "${listing.title}"`);
-  return analyzeLocally(listing);
+  return simpleScore(listing.price, listing.market_price);
 }
 
-// BŪTINA EKSPORTUOTI VISAS SKREIPERIAMS REIKALINGAS FUNKCIJAS!
 module.exports = {
   analyzeWithGemini,
-  analyzeListing: analyzeWithGemini, // palaikymui senos integracijos
   estimateMarketPrice,
-  detectCategory
+  detectCategory,
+  simpleScore
 };

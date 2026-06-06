@@ -12,13 +12,11 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// Logeris – konsolėje rodys visas užklausas
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// API Sveikatos patikrinimas
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
@@ -27,46 +25,85 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Saugus endpoint'as visiems skelbimams gauti
 app.get('/api/listings', (req, res) => {
   if (!db || typeof db.all !== 'function') {
-    return res.json([]);
+    return res.json({ listings: [] });
   }
-  db.all('SELECT * FROM listings ORDER BY score DESC LIMIT 100', [], (err, rows) => {
+
+  let query = 'SELECT * FROM listings WHERE 1=1';
+  const params = [];
+
+  if (req.query.category && req.query.category !== '') {
+    query += ' AND category = ?';
+    params.push(req.query.category);
+  }
+
+  const sort = req.query.sort || 'score';
+  if (sort === 'price') {
+    query += ' ORDER BY price ASC';
+  } else if (sort === 'newest') {
+    query += ' ORDER BY created_at DESC';
+  } else if (sort === 'discount') {
+    query += ' ORDER BY discount_pct DESC';
+  } else {
+    query += ' ORDER BY score DESC';
+  }
+
+  const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  query += ' LIMIT ' + limit;
+
+  db.all(query, params, (err, rows) => {
     if (err) {
       console.error('DB error [listings]:', err.message);
-      return res.json([]); // Grąžinam [], kad frontend nesulūžtų
+      return res.json({ listings: [] });
     }
     res.json({ listings: rows || [] });
   });
 });
 
-// Saugus endpoint'as geriausiems skelbimams gauti (score >= 70)
+app.get('/api/stats', (req, res) => {
+  if (!db || typeof db.all !== 'function') {
+    return res.json({ total: 0, hotDeals: 0, avgScore: 0, bestScore: 0 });
+  }
+
+  db.all('SELECT COUNT(*) as total, AVG(score) as avgScore, MAX(score) as bestScore FROM listings', [], (err, rows) => {
+    if (err || !rows || !rows[0]) {
+      return res.json({ total: 0, hotDeals: 0, avgScore: 0, bestScore: 0 });
+    }
+
+    const total = rows[0].total || 0;
+    const avgScore = rows[0].avgScore || 0;
+    const bestScore = rows[0].bestScore || 0;
+
+    db.all('SELECT COUNT(*) as count FROM listings WHERE score >= 70', [], (err2, rows2) => {
+      const hotDeals = (rows2 && rows2[0]) ? rows2[0].count : 0;
+      res.json({ total, hotDeals, avgScore: Math.round(avgScore), bestScore });
+    });
+  });
+});
+
 app.get('/api/deals/best', (req, res) => {
   if (!db || typeof db.all !== 'function') {
-    return res.json([]);
+    return res.json({ listings: [] });
   }
   db.all('SELECT * FROM listings WHERE score >= 70 ORDER BY score DESC LIMIT 20', [], (err, rows) => {
     if (err) {
       console.error('DB error [best deals]:', err.message);
-      return res.json([]); // Grąžinam [], kad frontend nesulūžtų
+      return res.json({ listings: [] });
     }
     res.json({ listings: rows || [] });
   });
 });
 
-// Rankinis skreipinimo paleidimas iš serverio pusės (jei prireiktų)
 app.post('/api/scrape', async (req, res) => {
   try {
     res.json({ message: 'Scraping started...' });
     await scrapeAll();
   } catch (err) {
     console.error('Scrape error:', err.message);
-    res.status(500).json({ error: err.message });
   }
 });
 
-// Bulk endpoint - GitHub Actions siunčia surinktus duomenis čia
 app.post('/api/listings/bulk', async (req, res) => {
   const { listings } = req.body;
   if (!listings || !Array.isArray(listings)) {
@@ -94,11 +131,10 @@ app.post('/api/listings/bulk', async (req, res) => {
     });
     saved++;
   }
-  console.log(`[Bulk] Išsaugota naujų skelbimų: ${saved}`);
+  console.log(`[Bulk] Issaugota nauju skelbimų: ${saved}`);
   res.json({ saved, total: listings.length });
 });
 
-// Rezervinis automatinis skreiperio paleidimas kas 30 minučių pačiame serveryje
 cron.schedule('*/30 * * * *', async () => {
   console.log('Auto scraping started from server cron...');
   try {
@@ -108,17 +144,12 @@ cron.schedule('*/30 * * * *', async () => {
   }
 });
 
-// --- FRONTEND APILINKĖS APTARNAVIMAS ---
-// Nurodom Express, kad 'frontend' aplankas turi statinius failus (css, js, paveiksliukus)
 app.use(express.static(path.join(__dirname, 'frontend')));
 
-// Svarbiausia dalis: atidarius pagrindinį puslapį, gražiname index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
 });
-// ----------------------------------------
 
-// Serverio paleidimas po DB inicializacijos
 db.init(() => {
   app.listen(PORT, () => {
     console.log(`Serveris sėkmingai paleistas ant prievado: ${PORT}`);
