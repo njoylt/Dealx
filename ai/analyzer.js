@@ -1,7 +1,7 @@
 const axios = require('axios');
 
-// Pakeista į pilną ir stabilų v1/models endpoint'ą su -latest sufiksu
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent';
+// Pakeista į v1beta, kuri pilnai palaiko gemini-1.5-flash be 404 klaidų
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 const MARKET_PRICES = {
   'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350, 'iphone 11': 250,
