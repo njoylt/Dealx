@@ -1,7 +1,7 @@
 const axios = require('axios');
 
-// Pakeista į v1beta, kuri pilnai palaiko gemini-1.5-flash be 404 klaidų
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+// Naudojamas aktualus gemini-2.0-flash modelis v1beta versijoje, kad išvengtume 404 klaidų
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
 
 const MARKET_PRICES = {
   'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350, 'iphone 11': 250,
