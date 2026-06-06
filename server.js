@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const cron = require('node-cron');
+const path = require('path');
 const db = require('./database/db');
 const { scrapeAll } = require('./scrapers/index');
 
@@ -48,22 +49,6 @@ app.post('/api/scrape', async (req, res) => {
   }
 });
 
-cron.schedule('*/30 * * * *', async () => {
-  console.log('Auto scraping started...');
-  try {
-    await scrapeAll();
-  } catch (err) {
-    console.error('Auto scrape failed:', err.message);
-  }
-});
-
-db.init(() => {
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    setTimeout(() => scrapeAll(), 8000);
-  });
-});
-
 // Bulk endpoint - GitHub Actions siunčia duomenis čia
 app.post('/api/listings/bulk', async (req, res) => {
   const { listings } = req.body;
@@ -92,4 +77,28 @@ app.post('/api/listings/bulk', async (req, res) => {
   }
   console.log(`[Bulk] Išsaugota: ${saved}`);
   res.json({ saved, total: listings.length });
+});
+
+cron.schedule('*/30 * * * *', async () => {
+  console.log('Auto scraping started...');
+  try {
+    await scrapeAll();
+  } catch (err) {
+    console.error('Auto scrape failed:', err.message);
+  }
+});
+
+// --- FRONTEND APTARNAVIMAS ---
+app.use(express.static(path.join(__dirname, 'frontend')));
+
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'frontend', 'index.html'));
+});
+// -----------------------------
+
+db.init(() => {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    // Senas tiesioginis scrapeAll() išjungtas, kad Render be reikalo negautų 403 blokų
+  });
 });
