@@ -37,7 +37,7 @@ app.get('/api/listings', (req, res) => {
       console.error('DB error [listings]:', err.message);
       return res.json([]); // Grąžinam [], kad frontend nesulūžtų
     }
-    res.json(rows || [
+    res.json({ listings: rows || [] });
   });
 });
 
