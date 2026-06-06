@@ -56,7 +56,7 @@ async function analyzeWithGemini(listing) {
         generationConfig: { 
           temperature: 0.2, 
           maxOutputTokens: 150,
-          response_mime_type: "application/json"
+          responseMimeType: "application/json" // Pakeista iš response_mime_type į responseMimeType, kad v1 API priimtų užklausą
         }
       },
       { timeout: 8000 }
