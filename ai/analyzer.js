@@ -1,8 +1,9 @@
 require('dotenv').config();
 const axios = require('axios');
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
+// Prieš tai buvo: const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 // Geriausi rinkos kainos šablonai analizavimui
 const MARKET_PRICES = {
   'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350,
