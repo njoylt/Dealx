@@ -26,11 +26,20 @@ app.get('/health', (req, res) => {
 });
 
 app.get('/api/listings', (req, res) => {
+  // Patikrinam, ar db ir db.all aplskritai egzistuoja, kad serveris neužlūžtų
+  if (!db || typeof db.all !== 'function') {
+    return res.json([]);
+  }
+  
   db.all('SELECT * FROM listings ORDER BY score DESC LIMIT 100', [], (err, rows) => {
-    if (err) return res.status(500).json({ error: err.message });
-    res.json(rows);
+    if (err) {
+      console.error('DB error:', err.message);
+      return res.json([]); // Vietoj 500 klaidos grąžinam [], kad frontend nesulūžtų
+    }
+    res.json(rows || []);
   });
 });
+
 
 app.get('/api/deals/best', (req, res) => {
   db.all('SELECT * FROM listings WHERE score >= 70 ORDER BY score DESC LIMIT 20', [], (err, rows) => {
