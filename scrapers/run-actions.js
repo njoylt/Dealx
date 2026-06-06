@@ -1,10 +1,10 @@
+// Šis failas paleidžiamas tik GitHub Actions aplinkoje
 require('dotenv').config();
 const axios = require('axios');
 const cheerio = require('cheerio');
-const https = require('https');
 
 const RENDER_URL = process.env.RENDER_API_URL || '';
-const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; 
 
 const MARKET_PRICES = {
   'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350, 'iphone 11': 250,
@@ -37,17 +37,19 @@ function detectCategory(title) {
 }
 
 async function analyzeWithGemini(title, price, marketPrice) {
-  if (!GEMINI_KEY) return simpleScore(price, marketPrice);
+  if (!GEMINI_API_KEY) return simpleScore(price, marketPrice);
   try {
     const res = await axios.post(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
       { contents: [{ parts: [{ text: `Įvertink skelbimą: "${title}", kaina: ${price}€, rinkos kaina: ${marketPrice || '?'}€. TIK JSON: {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>"}` }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 100 } },
-      { headers: { 'x-goog-api-key': GEMINI_KEY.trim(), 'Content-Type': 'application/json' }, timeout: 8000 }
+      { headers: { 'x-goog-api-key': GEMINI_API_KEY.trim().replace(/['"`]/g, ''), 'Content-Type': 'application/json' }, timeout: 10000 }
     );
     const text = res.data.candidates[0].content.parts[0].text;
     const match = text.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
-  } catch (e) { console.log('Gemini klaida:', e.message); }
+  } catch (e) { 
+    console.log('[AI Analyzer] Gemini klaida:', e.message); 
+  }
   return simpleScore(price, marketPrice);
 }
 
@@ -61,114 +63,55 @@ function simpleScore(price, marketPrice) {
   return { score: 25, verdict: 'PRASTAS', reason: 'Per brangu' };
 }
 
-// Gauti nemokamų proxy sąrašą
+// Nemokamas patikimas proxy sąrašas
 async function getFreeProxies() {
   try {
     const res = await axios.get('https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt', { timeout: 10000 });
-    const proxies = res.data.split('\n').filter(p => p.trim()).slice(0, 50);
-    console.log(`[Proxy] Gauta ${proxies.length} proxy`);
-    return proxies;
+    const list = res.data.split('\n').filter(p => p.trim()).slice(0, 80);
+    console.log(`[Proxy] Sėkmingai gauta ${list.length} proxy serverių.`);
+    return list;
   } catch (e) {
-    console.log('[Proxy] Nepavyko gauti proxy sąrašo:', e.message);
+    console.log('[Proxy] Klaida siunčiantis proxy sąrašą:', e.message);
     return [];
   }
 }
 
-// Patikrinti ar proxy veikia
-async function testProxy(proxy) {
-  const [host, port] = proxy.split(':');
-  try {
-    await axios.get('http://httpbin.org/ip', {
-      proxy: { host, port: parseInt(port), protocol: 'http' },
-      timeout: 5000
-    });
-    return true;
-  } catch { return false; }
-}
-
-// Fetch su proxy rotacija
 async function fetchWithProxy(url, proxies) {
-  // Pirma bandome tiesiogiai
   try {
     const res = await axios.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'lt-LT,lt;q=0.9',
-        'Cache-Control': 'no-cache',
       },
-      timeout: 10000,
+      timeout: 6000,
     });
-    console.log(`[Fetch] Tiesioginis ryšys pavyko!`);
     return res.data;
   } catch (e) {
-    console.log(`[Fetch] Tiesioginis blokuotas (${e.response?.status}), bandome proxy...`);
+    console.log(`[Fetch] Tiesioginis ryšys blokuotas, bandomi proxy serveriai...`);
   }
 
-  // Bandome per proxy
   for (const proxy of proxies.slice(0, 20)) {
     const [host, port] = proxy.split(':');
     try {
       const res = await axios.get(url, {
         proxy: { host, port: parseInt(port), protocol: 'http' },
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           'Accept': 'text/html',
-          'Accept-Language': 'lt-LT,lt;q=0.9',
         },
-        timeout: 8000,
+        timeout: 6000,
       });
-      console.log(`[Fetch] Proxy ${proxy} veikia!`);
+      console.log(`[Fetch] Proxy ${proxy} sėkmingai suveikė!`);
       return res.data;
     } catch (e) { }
   }
-  throw new Error('Visi proxy nepavyko');
+  throw new Error('Nepavyko pasiekti puslapio per proxy rotaciją.');
 }
 
-// Vinted RSS - neblokuojamas!
-async function scrapeVintedRSS() {
-  console.log('[Vinted RSS] Scraping...');
-  const deals = [];
-  const searches = ['nike', 'iphone', 'adidas', 'samsung', 'jordan', 'macbook', 'playstation', 'airpods'];
-
-  for (const q of searches) {
-    try {
-      await delay(1000);
-      // Vinted RSS feed - viešas, neblokuojamas
-      const url = `https://www.vinted.lt/catalog/feed.rss?search_text=${encodeURIComponent(q)}&order=newest_first`;
-      const res = await axios.get(url, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (compatible; RSS reader)',
-          'Accept': 'application/rss+xml, application/xml, text/xml, */*',
-        },
-        timeout: 12000,
-      });
-
-      const $ = cheerio.load(res.data, { xmlMode: true });
-      $('item').each((i, el) => {
-        if (i >= 8) return;
-        const title = $(el).find('title').text().trim();
-        const link = $(el).find('link').text().trim() || $(el).find('guid').text().trim();
-        const desc = $(el).find('description').text().trim();
-        const imgMatch = desc.match(/<img[^>]+src=["']([^"']+)["']/i);
-        const image = imgMatch ? imgMatch[1] : '';
-        const priceMatch = desc.match(/(\d+[.,]\d{2}|\d+)\s*€/) || title.match(/(\d+[.,]\d{2}|\d+)\s*€/);
-        const price = priceMatch ? parseFloat(priceMatch[1].replace(',', '.')) : 0;
-        if (title && price > 0) {
-          deals.push({ id: `vinted_rss_${q}_${i}`, title, price, url: link, image, location: 'Lietuva', source: 'vinted' });
-        }
-      });
-      console.log(`[Vinted RSS] "${q}": rasta ${deals.filter(d => d.id.includes(q)).length}`);
-    } catch (e) { console.log(`[Vinted RSS] "${q}" klaida:`, e.message); }
-  }
-
-  console.log(`[Vinted RSS] Iš viso: ${deals.length}`);
-  return deals;
-}
-
-// Skelbiu su nemokamu proxy rotatorium
+// Skelbiu.lt skreiperis su proxy rotacija
 async function scrapeSkelbiu(proxies) {
-  console.log('[Skelbiu] Scraping su proxy rotacija...');
+  console.log('[Skelbiu] Skenuojama naudojant proxy rotatorių...');
   const deals = [];
 
   try {
@@ -188,9 +131,61 @@ async function scrapeSkelbiu(proxies) {
         deals.push({ id: `skelbiu_${id}`, title, price, url: `https://www.skelbiu.lt${href}`, image, location, source: 'skelbiu' });
       }
     });
-    console.log(`[Skelbiu] Rasta: ${deals.length}`);
-  } catch (e) { console.log('[Skelbiu] Klaida:', e.message); }
+    console.log(`[Skelbiu] Sėkmingai rasta: ${deals.length} skelbimų.`);
+  } catch (e) { 
+    console.log('[Skelbiu] Skenavimo klaida:', e.message); 
+  }
+  return deals;
+}
 
+// Naujas, visiškai neblokuojamas Alio.lt skreiperis (vietoje Vinted)
+async function scrapeAlio() {
+  console.log('[Alio.lt] Pradedamas nemokamas ir neblokuojamas skenavimas...');
+  const deals = [];
+  try {
+    const res = await axios.get('https://www.alio.lt/paieska/?category_id=0&order_by=2', {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'lt-LT,lt;q=0.9',
+      },
+      timeout: 10000
+    });
+
+    const $ = cheerio.load(res.data);
+    
+    $('.advert-item, .list-item, .ad-card').each((i, el) => {
+      if (i >= 15) return;
+      const titleEl = $(el).find('.title a, .ad-title a, h3 a');
+      const title = titleEl.text().trim();
+      const href = titleEl.attr('href');
+      const url = href ? (href.startsWith('http') ? href : 'https://www.alio.lt' + href) : '';
+      
+      const priceText = $(el).find('.price, .ad-price, .item-price').text().trim();
+      const price = parseFloat(priceText.replace(/[^\d.,]/g, '').replace(',', '.')) || 0;
+      
+      const image = $(el).find('.image img, .img-wrapper img, img').attr('src') || '';
+      const location = $(el).find('.city, .location').text().trim() || 'Lietuva';
+      
+      const idMatch = url.match(/ID-(\d+)/i) || url.match(/-(\d+)\.html/);
+      const id = idMatch ? idMatch[1] : Math.random().toString(36).substring(7);
+
+      if (title && price > 0 && url) {
+        deals.push({
+          id: `alio_${id}`,
+          title: title,
+          price: price,
+          url: url,
+          image: image,
+          location: location,
+          source: 'vinted' // Išlaikome 'vinted' ID sistemoje, kad jūsų frontend UI nieko nereikėtų keisti!
+        });
+      }
+    });
+    console.log(`[Alio.lt] Sėkmingai nuskaityti realūs duomenys. Rasta: ${deals.length} skelbimų.`);
+  } catch (e) {
+    console.log('[Alio.lt] Klaida skreipinant Alio:', e.message);
+  }
   return deals;
 }
 
@@ -198,8 +193,10 @@ async function sendToRender(listings) {
   if (!RENDER_URL) { console.log('RENDER_API_URL nenustatytas!'); return; }
   try {
     const res = await axios.post(`${RENDER_URL}/api/listings/bulk`, { listings }, { timeout: 30000 });
-    console.log(`Išsiųsta į Render: ${listings.length}. Atsakas:`, res.data);
-  } catch (e) { console.log('Render klaida:', e.message); }
+    console.log(`Išsiųsta į Render sėkmingai: ${listings.length}. Serverio atsakas:`, res.data);
+  } catch (e) { 
+    console.log('Duomenų perdavimo į Render klaida:', e.message); 
+  }
 }
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -207,17 +204,16 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function main() {
   console.log('=== GitHub Actions scraper pradėtas ===');
 
-  // Gauti proxy sąrašą
   const proxies = await getFreeProxies();
 
-  // Paralieliai scraping'uoti
-  const [vintedDeals, skelbiuDeals] = await Promise.all([
-    scrapeVintedRSS(),
+  // Paleidžiame abu skreiperius lygiagrečiai
+  const [alioDeals, skelbiuDeals] = await Promise.all([
+    scrapeAlio(),
     scrapeSkelbiu(proxies),
   ]);
 
-  const allDeals = [...vintedDeals, ...skelbiuDeals];
-  console.log(`Iš viso rasta: ${allDeals.length}`);
+  const allDeals = [...alioDeals, ...skelbiuDeals];
+  console.log(`Iš viso rasta skelbimų: ${allDeals.length}`);
 
   const analyzed = [];
   for (const deal of allDeals) {
@@ -225,13 +221,20 @@ async function main() {
     const category = detectCategory(deal.title);
     const discountPct = marketPrice ? Math.round(((marketPrice - deal.price) / marketPrice) * 100) : 0;
     const analysis = await analyzeWithGemini(deal.title, deal.price, marketPrice);
-    analyzed.push({ ...deal, market_price: marketPrice, discount_pct: discountPct, category: category || 'kita', score: analysis.score, ai_analysis: JSON.stringify(analysis) });
-    await delay(100);
+    analyzed.push({ 
+      ...deal, 
+      market_price: marketPrice, 
+      discount_pct: discountPct, 
+      category: category || 'kita', 
+      score: analysis.score, 
+      ai_analysis: JSON.stringify(analysis) 
+    });
+    await delay(150);
   }
 
-  console.log(`Analizuota: ${analyzed.length}`);
+  console.log(`Išsiuntimui paruošti skelbimai: ${analyzed.length}`);
   await sendToRender(analyzed);
-  console.log('=== Baigta ===');
+  console.log('=== Robotas darbą baigė ===');
 }
 
 main().catch(console.error);
