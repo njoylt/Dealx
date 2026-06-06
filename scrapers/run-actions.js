@@ -4,7 +4,7 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 
 const RENDER_URL = process.env.RENDER_API_URL || '';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; // Suvienodintas pagal Render nustatymus
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; 
 const SCRAPINGBEE_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 
 const MARKET_PRICES = {
@@ -40,13 +40,15 @@ function detectCategory(title) {
 async function analyzeWithGemini(title, price, marketPrice) {
   if (!GEMINI_API_KEY) return simpleScore(price, marketPrice);
   
-  // Išvalome netyčia įsivėlusius tarpus ar kabutes iš API rakto
-  const cleanedKey = GEMINI_API_KEY.trim().replace(/['"`]/g, '');
+  // Griežtas rakto išvalymas nuo bet kokių tarpų, kabučių ar nematomų simbolių (\r, \n)
+  const cleanedKey = GEMINI_API_KEY.trim().replace(/['"`\r\n\s]/g, '');
 
   try {
-    // PATAISYTA: Teisingas Gemini API URL ir Headers formatas (x-goog-api-key)
+    // Naudojame patikimiausią Google rekomenduojamą URL struktūrą su v1beta ir gemini-1.5-flash
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${cleanedKey}`;
+    
     const res = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent',
+      url,
       { 
         contents: [{ 
           parts: [{ 
@@ -59,13 +61,11 @@ async function analyzeWithGemini(title, price, marketPrice) {
         } 
       },
       { 
-        headers: { 
-          'x-goog-api-key': cleanedKey, 
-          'Content-Type': 'application/json' 
-        }, 
+        headers: { 'Content-Type': 'application/json' }, 
         timeout: 10000 
       }
     );
+    
     const text = res.data.candidates[0].content.parts[0].text;
     const match = text.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
@@ -95,10 +95,10 @@ async function scrapeSkelbiu() {
 
   try {
     const targetUrl = 'https://www.skelbiu.lt/skelbimai/?cities=0&order=1&category_id=0';
-    // Naudojame ScrapingBee Premium Proxy su JS renderinimu Cloudflare apėjimui
-    const proxyUrl = `https://app.scrapingbee.com/api/v1/?api_key=${SCRAPINGBEE_KEY}&url=${encodeURIComponent(targetUrl)}&render_js=true&premium_proxy=true`;
+    // PATAISYTA: render_js pakeista į false. Taip išvengsime slapukų sutikimo lango, kuris paslėpdavo skelbimus
+    const proxyUrl = `https://app.scrapingbee.com/api/v1/?api_key=${SCRAPINGBEE_KEY}&url=${encodeURIComponent(targetUrl)}&render_js=false&premium_proxy=true`;
     
-    const res = await axios.get(proxyUrl, { timeout: 35000 });
+    const res = await axios.get(proxyUrl, { timeout: 30000 });
     const $ = cheerio.load(res.data);
 
     $('.simpleAds, .boldAds').each((i, el) => {
