@@ -1,18 +1,19 @@
 require('dotenv').config();
 const axios = require('axios');
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+// PATAISYTA: Tikslus ir naujausias stabilaus Gemini modelio kelias
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent';
 
 const MARKET_PRICES = {
-  'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350,
+  'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350, 'iphone 11': 250,
   'samsung galaxy s24': 850, 'samsung galaxy s23': 600, 'samsung galaxy s22': 400,
-  'macbook pro': 1800, 'macbook air': 1100,
-  'ps5': 500, 'playstation 5': 500, 'xbox series x': 450,
-  'airpods pro': 250, 'airpods': 130, 'ipad': 400,
-  'bmw 3': 15000, 'vw golf': 12000, 'toyota corolla': 14000,
-  'audi a4': 18000, 'skoda octavia': 13000,
+  'samsung galaxy a54': 300, 'macbook pro': 1800, 'macbook air': 1100,
+  'ps5': 500, 'playstation 5': 500, 'xbox': 450,
+  'airpods pro': 250, 'airpods': 130, 'ipad pro': 900, 'ipad air': 600, 'ipad': 400,
+  'bmw 3': 15000, 'bmw 5': 25000, 'audi a4': 18000, 'vw golf': 12000,
+  'toyota corolla': 14000, 'skoda octavia': 13000, 'mercedes c': 22000,
   'nike air max': 120, 'nike dunk': 110, 'adidas ultraboost': 150,
-  'jordan 1': 180, 'north face': 200, 'dyson v11': 350,
+  'jordan 1': 180, 'north face': 200, 'dyson v11': 350, 'new balance': 100,
 };
 
 function estimateMarketPrice(title) {
@@ -25,11 +26,11 @@ function estimateMarketPrice(title) {
 
 function detectCategory(title) {
   const t = title.toLowerCase();
-  if (/bmw|audi|vw|toyota|honda|mercedes|skoda|auto/.test(t)) return 'auto';
-  if (/iphone|samsung|macbook|ps5|xbox|airpods|ipad|telefon/.test(t)) return 'tech';
-  if (/nike|adidas|jordan|batai|sneaker|new balance/.test(t)) return 'batai';
-  if (/striuke|megztinis|north face|drabuz/.test(t)) return 'drabuziai';
-  if (/dyson|sofa|baldai|spinta/.test(t)) return 'namai';
+  if (/bmw|audi|vw|toyota|honda|mercedes|ford|skoda|auto|moto/.test(t)) return 'auto';
+  if (/iphone|samsung|macbook|ps5|xbox|airpods|ipad|telefon|playstation/.test(t)) return 'tech';
+  if (/nike|adidas|jordan|batai|sneaker|new balance|puma/.test(t)) return 'batai';
+  if (/striuke|megztin|north face|drabuz|paltu/.test(t)) return 'drabuziai';
+  if (/dyson|sofa|baldai|spinta|roomba/.test(t)) return 'namai';
   return 'kita';
 }
 
@@ -82,8 +83,6 @@ async function analyzeWithGemini(listing) {
   let apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) return analyzeLocally(listing);
-  
-  // Svarbu: Nuvalome bet kokius netyčia įsivėlusius tarpus ar kabutes iš aplinkos kintamojo
   apiKey = apiKey.trim().replace(/['"`]/g, '');
 
   if (apiKey === 'your_gemini_api_key_here' || apiKey === '' || apiKey.includes('tavo_gemini')) {
@@ -94,7 +93,7 @@ async function analyzeWithGemini(listing) {
 
   for (let i = 0; i < retries; i++) {
     try {
-      // Siunčiame užklausą nenaudodami "?key=" URL parametro, o per x-goog-api-key saugų headerį
+      // PATAISYTA: Užklausa siunčiama su x-goog-api-key antrašte į teisingą modelio adresą
       const response = await axios.post(
         GEMINI_URL,
         {
@@ -139,7 +138,6 @@ async function analyzeWithGemini(listing) {
     }
   }
 
-  console.log(`[AI Analyzer] Naudojama vietinė analizė skelbimui: "${listing.title}"`);
   return analyzeLocally(listing);
 }
 
