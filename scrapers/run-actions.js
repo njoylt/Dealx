@@ -63,11 +63,11 @@ function simpleScore(price, marketPrice) {
   return { score: 25, verdict: 'PRASTAS', reason: 'Per brangu' };
 }
 
-// Nemokamas patikimas proxy sąrašas
+// Atsisiunčiame nemokamus HTTP proxy serverius iš GitHub šaltinio
 async function getFreeProxies() {
   try {
     const res = await axios.get('https://raw.githubusercontent.com/TheSpeedX/PROXY-List/master/http.txt', { timeout: 10000 });
-    const list = res.data.split('\n').filter(p => p.trim()).slice(0, 80);
+    const list = res.data.split('\n').filter(p => p.trim());
     console.log(`[Proxy] Sėkmingai gauta ${list.length} proxy serverių.`);
     return list;
   } catch (e) {
@@ -76,37 +76,45 @@ async function getFreeProxies() {
   }
 }
 
-async function fetchWithProxy(url, proxies) {
+// Funkcija, kuri bando krauti URL tiesiogiai, o nepavykus – rotuoja proxy sąrašą
+async function fetchWithProxy(url, proxies, sourceName = 'Svetainė') {
   try {
     const res = await axios.get(url, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'lt-LT,lt;q=0.9',
+        'Cache-Control': 'no-cache'
       },
-      timeout: 6000,
+      timeout: 5000,
     });
     return res.data;
   } catch (e) {
-    console.log(`[Fetch] Tiesioginis ryšys blokuotas, bandomi proxy serveriai...`);
+    console.log(`[Fetch - ${sourceName}] Tiesioginis ryšys blokuotas (${e.message}), bandomi proxy serveriai...`);
   }
 
-  for (const proxy of proxies.slice(0, 20)) {
+  // Atsitiktine tvarka paimame iki 30 proxy iš sąrašo, kad nedarytume užklausų per tuos pačius
+  const shuffledProxies = proxies.sort(() => 0.5 - Math.random()).slice(0, 30);
+
+  for (const proxy of shuffledProxies) {
     const [host, port] = proxy.split(':');
     try {
       const res = await axios.get(url, {
         proxy: { host, port: parseInt(port), protocol: 'http' },
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-          'Accept': 'text/html',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'lt-LT,lt;q=0.9',
         },
         timeout: 6000,
       });
-      console.log(`[Fetch] Proxy ${proxy} sėkmingai suveikė!`);
+      console.log(`[Fetch - ${sourceName}] Proxy ${proxy} sėkmingai suveikė!`);
       return res.data;
-    } catch (e) { }
+    } catch (e) {
+      // Jei proxy neveikia, tyliai bandom kitą
+    }
   }
-  throw new Error('Nepavyko pasiekti puslapio per proxy rotaciją.');
+  throw new Error(`[${sourceName}] Nepavyko pasiekti puslapio nei tiesiogiai, nei per proxy rotaciją.`);
 }
 
 // Skelbiu.lt skreiperis su proxy rotacija
@@ -115,7 +123,7 @@ async function scrapeSkelbiu(proxies) {
   const deals = [];
 
   try {
-    const html = await fetchWithProxy('https://www.skelbiu.lt/skelbimai/?cities=0&order=1&category_id=0', proxies);
+    const html = await fetchWithProxy('https://www.skelbiu.lt/skelbimai/?cities=0&order=1&category_id=0', proxies, 'Skelbiu');
     const $ = cheerio.load(html);
 
     $('.simpleAds, .boldAds').each((i, el) => {
@@ -138,21 +146,13 @@ async function scrapeSkelbiu(proxies) {
   return deals;
 }
 
-// Naujas, visiškai neblokuojamas Alio.lt skreiperis (vietoje Vinted)
-async function scrapeAlio() {
-  console.log('[Alio.lt] Pradedamas nemokamas ir neblokuojamas skenavimas...');
+// Alio.lt skreiperis (Dabar taip pat naudoja proxy rotaciją!)
+async function scrapeAlio(proxies) {
+  console.log('[Alio.lt] Skenuojama naudojant proxy rotatorių...');
   const deals = [];
   try {
-    const res = await axios.get('https://www.alio.lt/paieska/?category_id=0&order_by=2', {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'lt-LT,lt;q=0.9',
-      },
-      timeout: 10000
-    });
-
-    const $ = cheerio.load(res.data);
+    const html = await fetchWithProxy('https://www.alio.lt/paieska/?category_id=0&order_by=2', proxies, 'Alio');
+    const $ = cheerio.load(html);
     
     $('.advert-item, .list-item, .ad-card').each((i, el) => {
       if (i >= 15) return;
@@ -178,22 +178,22 @@ async function scrapeAlio() {
           url: url,
           image: image,
           location: location,
-          source: 'vinted' // Išlaikome 'vinted' ID sistemoje, kad jūsų frontend UI nieko nereikėtų keisti!
+          source: 'vinted' // Išlaikome 'vinted', kad nereikėtų keisti jūsų DB/Frontend logikos
         });
       }
     });
-    console.log(`[Alio.lt] Sėkmingai nuskaityti realūs duomenys. Rasta: ${deals.length} skelbimų.`);
+    console.log(`[Alio.lt] Sėkmingai rasta: ${deals.length} skelbimų.`);
   } catch (e) {
-    console.log('[Alio.lt] Klaida skreipinant Alio:', e.message);
+    console.log('[Alio.lt] Skenavimo klaida:', e.message);
   }
   return deals;
 }
 
 async function sendToRender(listings) {
-  if (!RENDER_URL) { console.log('RENDER_API_URL nenustatytas!'); return; }
+  if (!RENDER_URL) { console.log('RENDER_API_URL kintamasis nerastas!'); return; }
   try {
     const res = await axios.post(`${RENDER_URL}/api/listings/bulk`, { listings }, { timeout: 30000 });
-    console.log(`Išsiųsta į Render sėkmingai: ${listings.length}. Serverio atsakas:`, res.data);
+    console.log(`Išsiųsta į Render sėkmingai: ${listings.length}. Atsakas:`, res.data);
   } catch (e) { 
     console.log('Duomenų perdavimo į Render klaida:', e.message); 
   }
@@ -205,15 +205,24 @@ async function main() {
   console.log('=== GitHub Actions scraper pradėtas ===');
 
   const proxies = await getFreeProxies();
+  if (proxies.length === 0) {
+    console.log('Klaida: Nepavyko gauti proxy sąrašo. Darbas stabdomas.');
+    return;
+  }
 
-  // Paleidžiame abu skreiperius lygiagrečiai
+  // Paleidžiame abu skreiperius lygiagrečiai, abu dabar naudoja proxy sąrašą
   const [alioDeals, skelbiuDeals] = await Promise.all([
-    scrapeAlio(),
+    scrapeAlio(proxies),
     scrapeSkelbiu(proxies),
   ]);
 
   const allDeals = [...alioDeals, ...skelbiuDeals];
-  console.log(`Iš viso rasta skelbimų: ${allDeals.length}`);
+  console.log(`Iš viso rasta skelbimų iš abiejų šaltinių: ${allDeals.length}`);
+
+  if (allDeals.length === 0) {
+    console.log('Naujų skelbimų nerasta, siuntimas atšauktas.');
+    return;
+  }
 
   const analyzed = [];
   for (const deal of allDeals) {
