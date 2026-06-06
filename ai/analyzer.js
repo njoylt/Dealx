@@ -1,6 +1,7 @@
 const axios = require('axios');
 
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+// Pakeistas URL į patikimą v1 standartą
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
 const MARKET_PRICES = {
   'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350, 'iphone 11': 250,
@@ -47,16 +48,24 @@ async function analyzeWithGemini(listing) {
     const response = await axios.post(
       `${GEMINI_URL}?key=${apiKey}`,
       {
-        contents: [{ parts: [{ text: `Įvertink skelbimą: "${listing.title}", kaina: ${listing.price}€, rinkos kaina: ${listing.market_price || '?'}€. Grąžink TIK JSON: {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>","risk":"<ŽEMAS|VIDUTINIS|AUKŠTAS>"}` }] }],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 150 }
+        contents: [{ 
+          parts: [{ 
+            text: `Įvertink skelbimą: "${listing.title}", kaina: ${listing.price}€, rinkos kaina: ${listing.market_price || '?'}€. Grąžink TIK JSON formatu (be jokių markdown \`\`\`json apvalkalų): {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>","risk":"<ŽEMAS|VIDUTINIS|AUKŠTAS>"}` 
+          }] 
+        }],
+        generationConfig: { 
+          temperature: 0.2, 
+          maxOutputTokens: 150,
+          responseMimeType: "application/json" // Priverčia Gemini grąžinti gryną JSON!
+        }
       },
       { timeout: 8000 }
     );
-    const text = response.data.candidates[0].content.parts[0].text;
-    const match = text.match(/\{[\s\S]*\}/);
-    if (match) return JSON.parse(match[0]);
+
+    const text = response.data.candidates[0].content.parts[0].text.trim();
+    return JSON.parse(text);
   } catch (err) {
-    console.error('Gemini klaida:', err.message);
+    console.error('Gemini klaida:', err.response ? `${err.response.status} - ${JSON.stringify(err.response.data)}` : err.message);
   }
   return analyzeLocally(listing);
 }
