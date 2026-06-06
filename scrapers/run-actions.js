@@ -1,9 +1,10 @@
+// Šis failas paleidžiamas tik GitHub Actions aplinkoje
 require('dotenv').config();
 const axios = require('axios');
 const cheerio = require('cheerio');
 
 const RENDER_URL = process.env.RENDER_API_URL || '';
-const GEMINI_KEY = process.env.GEMINI_API_KEY || '';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || ''; // Suvienodintas pagal Render nustatymus
 const SCRAPINGBEE_KEY = process.env.SCRAPINGBEE_API_KEY || '';
 
 const MARKET_PRICES = {
@@ -37,45 +38,71 @@ function detectCategory(title) {
 }
 
 async function analyzeWithGemini(title, price, marketPrice) {
-  if (!GEMINI_KEY) return simpleScore(price, marketPrice);
+  if (!GEMINI_API_KEY) return simpleScore(price, marketPrice);
+  
+  // Išvalome netyčia įsivėlusius tarpus ar kabutes iš API rakto
+  const cleanedKey = GEMINI_API_KEY.trim().replace(/['"`]/g, '');
+
   try {
+    // PATAISYTA: Teisingas Gemini API URL ir Headers formatas (x-goog-api-key)
     const res = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent',
-      { contents: [{ parts: [{ text: `Įvertink skelbimą: "${title}", kaina: ${price}€, rinkos kaina: ${marketPrice || '?'}€. TIK JSON: {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>"}` }] }], generationConfig: { temperature: 0.2, maxOutputTokens: 100 } },
-      { headers: { 'x-goog-api-key': GEMINI_KEY.trim(), 'Content-Type': 'application/json' }, timeout: 10000 }
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent',
+      { 
+        contents: [{ 
+          parts: [{ 
+            text: `Įvertink skelbimą: "${title}", kaina: ${price}€, rinkos kaina: ${marketPrice || '?'}€. TIK JSON formatu lietuviškai: {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>"}` 
+          }] 
+        }], 
+        generationConfig: { 
+          temperature: 0.2, 
+          maxOutputTokens: 150 
+        } 
+      },
+      { 
+        headers: { 
+          'x-goog-api-key': cleanedKey, 
+          'Content-Type': 'application/json' 
+        }, 
+        timeout: 10000 
+      }
     );
     const text = res.data.candidates[0].content.parts[0].text;
     const match = text.match(/\{[\s\S]*\}/);
     if (match) return JSON.parse(match[0]);
-  } catch (e) { console.log('Gemini klaida:', e.message); }
+  } catch (e) { 
+    console.log('[AI Analyzer] Gemini klaida (naudojamas vietinis vertinimas):', e.message); 
+  }
   return simpleScore(price, marketPrice);
 }
 
 function simpleScore(price, marketPrice) {
   if (!marketPrice) return { score: 50, verdict: 'VIDUTINIS', reason: 'Nėra rinkos kainos' };
   const d = ((marketPrice - price) / marketPrice) * 100;
-  if (d >= 40) return { score: 92, verdict: 'IŠSKIRTINIS', reason: `${Math.round(d)}% pigiau!` };
+  if (d >= 40) return { score: 92, verdict: 'IŠSKIRTINIS', reason: `${Math.round(d)}% pigiau už rinką!` };
   if (d >= 25) return { score: 78, verdict: 'PUIKUS', reason: `${Math.round(d)}% pigiau` };
   if (d >= 10) return { score: 65, verdict: 'GERAS', reason: 'Šiek tiek pigiau' };
   if (d >= -5) return { score: 45, verdict: 'VIDUTINIS', reason: 'Rinkos kaina' };
   return { score: 25, verdict: 'PRASTAS', reason: 'Per brangu' };
 }
 
-async function fetchWithScrapingBee(url, renderJs = false) {
-  if (!SCRAPINGBEE_KEY) throw new Error('SCRAPINGBEE_API_KEY nenustatytas');
-  const apiUrl = `https://app.scrapingbee.com/api/v1/?api_key=${SCRAPINGBEE_KEY}&url=${encodeURIComponent(url)}&render_js=${renderJs}&premium_proxy=true`;
-  const res = await axios.get(apiUrl, { timeout: 30000 });
-  return res.data;
-}
-
 async function scrapeSkelbiu() {
   console.log('[Skelbiu] Scraping su ScrapingBee...');
   const deals = [];
+  if (!SCRAPINGBEE_KEY) {
+    console.log('[Skelbiu] ScrapingBee raktas nerastas. Praleidžiama.');
+    return deals;
+  }
+
   try {
-    const html = await fetchWithScrapingBee('https://www.skelbiu.lt/skelbimai/?cities=0&order=1&category_id=0', true);
-    const $ = cheerio.load(html);
+    const targetUrl = 'https://www.skelbiu.lt/skelbimai/?cities=0&order=1&category_id=0';
+    // Naudojame ScrapingBee Premium Proxy su JS renderinimu Cloudflare apėjimui
+    const proxyUrl = `https://app.scrapingbee.com/api/v1/?api_key=${SCRAPINGBEE_KEY}&url=${encodeURIComponent(targetUrl)}&render_js=true&premium_proxy=true`;
+    
+    const res = await axios.get(proxyUrl, { timeout: 35000 });
+    const $ = cheerio.load(res.data);
+
     $('.simpleAds, .boldAds').each((i, el) => {
-      if (i >= 25) return;
+      if (i >= 20) return;
       const id = $(el).attr('id')?.replace('id-', '');
       const title = $(el).find('.adsTitle h3 a').text().trim();
       const priceText = $(el).find('.adsPrice').text().trim();
@@ -88,39 +115,51 @@ async function scrapeSkelbiu() {
       }
     });
     console.log(`[Skelbiu] Rasta: ${deals.length}`);
-  } catch (e) { console.log('[Skelbiu] Klaida:', e.message); }
+  } catch (e) { 
+    console.log('[Skelbiu] Klaida:', e.message); 
+  }
   return deals;
 }
 
 async function scrapeVinted() {
   console.log('[Vinted] Scraping su ScrapingBee...');
   const deals = [];
-  const searches = ['nike', 'iphone', 'adidas', 'samsung', 'jordan', 'macbook'];
+  if (!SCRAPINGBEE_KEY) {
+    console.log('[Vinted] ScrapingBee raktas nerastas. Praleidžiama.');
+    return deals;
+  }
 
+  const searches = ['nike', 'iphone', 'adidas', 'samsung', 'jordan', 'macbook'];
+  
   for (const q of searches) {
     try {
-      await delay(1000);
-      // Pirma gauti sesijos cookie
-      const mainPage = await fetchWithScrapingBee('https://www.vinted.lt', true);
+      await new Promise(r => setTimeout(r, 1500));
+      const url = `https://www.vinted.lt/api/v2/catalog/items?search_text=${encodeURIComponent(q)}&per_page=10&order=newest_first`;
       
-      // Tada API užklausa
-      const apiUrl = `https://www.vinted.lt/api/v2/catalog/items?search_text=${encodeURIComponent(q)}&per_page=10&order=newest_first`;
-      const html = await fetchWithScrapingBee(apiUrl, false);
+      const proxyUrl = `https://app.scrapingbee.com/api/v1/?api_key=${SCRAPINGBEE_KEY}&url=${encodeURIComponent(url)}&render_js=false&premium_proxy=true`;
+      const res = await axios.get(proxyUrl, { timeout: 25000 });
       
-      let data;
-      try { data = typeof html === 'string' ? JSON.parse(html) : html; } catch { continue; }
-      
-      const items = data?.items || [];
+      const items = res.data?.items || [];
       for (const item of items.slice(0, 5)) {
         const price = parseFloat(item.price?.amount || item.price || 0);
         if (item.title && price > 0) {
-          deals.push({ id: `vinted_${item.id}`, title: item.title, price, url: `https://www.vinted.lt/items/${item.id}`, image: item.photos?.[0]?.url || '', location: 'Lietuva', source: 'vinted' });
+          deals.push({ 
+            id: `vinted_${item.id}`, 
+            title: item.title, 
+            price, 
+            url: `https://www.vinted.lt/items/${item.id}`, 
+            image: item.photos?.[0]?.url || '', 
+            location: 'Lietuva', 
+            source: 'vinted' 
+          });
         }
       }
-      console.log(`[Vinted] "${q}": ${items.length} items`);
-    } catch (e) { console.log(`[Vinted] "${q}" klaida:`, e.message); }
+      console.log(`[Vinted] "${q}": rasta ${items.slice(0, 5).length} prekių`);
+    } catch (e) { 
+      console.log(`[Vinted] "${q}" klaida:`, e.message); 
+    }
   }
-  console.log(`[Vinted] Iš viso: ${deals.length}`);
+  console.log(`[Vinted] Iš viso rasta: ${deals.length}`);
   return deals;
 }
 
@@ -128,8 +167,10 @@ async function sendToRender(listings) {
   if (!RENDER_URL) { console.log('RENDER_API_URL nenustatytas!'); return; }
   try {
     const res = await axios.post(`${RENDER_URL}/api/listings/bulk`, { listings }, { timeout: 30000 });
-    console.log(`Išsiųsta: ${listings.length}. Atsakas:`, res.data);
-  } catch (e) { console.log('Render klaida:', e.message); }
+    console.log(`Išsiųsta į Render sėkmingai: ${listings.length}. Atsakas:`, res.data);
+  } catch (e) { 
+    console.log('Duomenų perdavimo į Render klaida:', e.message); 
+  }
 }
 
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
@@ -137,19 +178,25 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 async function main() {
   console.log('=== GitHub Actions scraper pradėtas ===');
   
-  if (!SCRAPINGBEE_KEY) {
-    console.log('❌ SCRAPINGBEE_API_KEY nerasta! Pridėk GitHub Secrets.');
-    return;
+  if (SCRAPINGBEE_KEY) {
+    console.log('✅ ScrapingBee key rastas');
+  } else {
+    console.log('❌ ScrapingBee key nerastas!');
   }
-  console.log('✅ ScrapingBee key rastas');
 
-  const [skelbiuDeals, vintedDeals] = await Promise.all([
-    scrapeSkelbiu(),
+  // Paleidžiame abu skreiperius lygiagrečiai
+  const [vintedDeals, skelbiuDeals] = await Promise.all([
     scrapeVinted(),
+    scrapeSkelbiu(),
   ]);
 
-  const allDeals = [...skelbiuDeals, ...vintedDeals];
-  console.log(`Iš viso rasta: ${allDeals.length}`);
+  const allDeals = [...vintedDeals, ...skelbiuDeals];
+  console.log(`Iš viso apdorojama skelbimų: ${allDeals.length}`);
+
+  if (allDeals.length === 0) {
+    console.log('Naujų skelbimų nerasta, siuntimas atšauktas.');
+    return;
+  }
 
   const analyzed = [];
   for (const deal of allDeals) {
@@ -157,12 +204,20 @@ async function main() {
     const category = detectCategory(deal.title);
     const discountPct = marketPrice ? Math.round(((marketPrice - deal.price) / marketPrice) * 100) : 0;
     const analysis = await analyzeWithGemini(deal.title, deal.price, marketPrice);
-    analyzed.push({ ...deal, market_price: marketPrice, discount_pct: discountPct, category: category || 'kita', score: analysis.score, ai_analysis: JSON.stringify(analysis) });
-    await delay(100);
+    analyzed.push({ 
+      ...deal, 
+      market_price: marketPrice, 
+      discount_pct: discountPct, 
+      category: category || 'kita', 
+      score: analysis.score, 
+      ai_analysis: JSON.stringify(analysis) 
+    });
+    await delay(150);
   }
 
+  console.log(`Išsiuntimui paruošti skelbimai: ${analyzed.length}`);
   await sendToRender(analyzed);
-  console.log('=== Baigta ===');
+  console.log('=== Robotas darbą baigė ===');
 }
 
 main().catch(console.error);
