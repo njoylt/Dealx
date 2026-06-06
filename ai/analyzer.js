@@ -1,7 +1,7 @@
 const axios = require('axios');
 
-// Naudojame stabilią v1 versiją
-const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
+// Pakeista į pilną ir stabilų v1/models endpoint'ą su -latest sufiksu
+const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash-latest:generateContent';
 
 const MARKET_PRICES = {
   'iphone 15': 900, 'iphone 14': 700, 'iphone 13': 500, 'iphone 12': 350, 'iphone 11': 250,
@@ -56,7 +56,6 @@ async function analyzeWithGemini(listing) {
         generationConfig: { 
           temperature: 0.1, 
           maxOutputTokens: 200
-          // Pašalintas kaprizingas responseMimeType fieldas
         }
       },
       { timeout: 8000 }
@@ -64,7 +63,6 @@ async function analyzeWithGemini(listing) {
 
     let text = response.data.candidates[0].content.parts[0].text.trim();
     
-    // Apsauga: jei modelis vis tiek grąžino tekstą su ```json ... ```, išvalome jį
     if (text.startsWith('```')) {
       text = text.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
     }
