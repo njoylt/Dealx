@@ -1,10 +1,9 @@
 const axios = require('axios');
 
-// Naujesnis Gemini endpoint (tas, kurį dabar bandei)
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent';
 
 /**
- * Paprastas rinkos kainų žemėlapis (gali plėsti pagal save)
+ * Paprastas rinkos kainų žemėlapis
  */
 const MARKET_PRICES = {
   'iphone 15': 900,
@@ -36,13 +35,12 @@ const MARKET_PRICES = {
 };
 
 /**
- * Rinkos kainos įvertinimas pagal pavadinimą
+ * Rinkos kainos įvertinimas
  */
 function estimateMarketPrice(title) {
   const t = (title || '').toLowerCase();
   for (const [k, v] of Object.entries(MARKET_PRICES)) {
     if (t.includes(k)) {
-      // šiek tiek random, kad nebūtų visiškai identiška
       return Math.round(v * (0.9 + Math.random() * 0.2));
     }
   }
@@ -50,7 +48,7 @@ function estimateMarketPrice(title) {
 }
 
 /**
- * Kategorijos nustatymas pagal pavadinimą
+ * Kategorijos nustatymas
  */
 function detectCategory(title) {
   const t = (title || '').toLowerCase();
@@ -65,7 +63,7 @@ function detectCategory(title) {
 }
 
 /**
- * Vietinė (lokali) analizė – fallback
+ * Vietinė analizė
  */
 function analyzeLocally(listing) {
   const price = parseFloat(listing.price);
@@ -75,7 +73,7 @@ function analyzeLocally(listing) {
     return {
       score: 50,
       verdict: "VIDUTINIS",
-      reason: "Trūksta rinkos kainos duomenų tiksliam vietiniam įvertinimui.",
+      reason: "Trūksta rinkos kainos duomenų.",
       risk: "VIDUTINIS"
     };
   }
@@ -91,105 +89,69 @@ function analyzeLocally(listing) {
     score = 95;
     verdict = "IŠSKIRTINIS";
     risk = "AUKŠTAS";
-    reason = `Kaina net ${Math.round(discountPct)}% žemesnė nei rinkos vertė. Būtina tikrinti!`;
+    reason = `Kaina net ${Math.round(discountPct)}% žemesnė nei rinkos vertė.`;
   } else if (discountPct >= 15) {
     score = 80;
     verdict = "PUIKUS";
     risk = "ŽEMAS";
-    reason = `Geras pasiūlymas, kaina apie ${Math.round(discountPct)}% žemesnė už rinką.`;
+    reason = `Geras pasiūlymas (${Math.round(discountPct)}% žemiau rinkos).`;
   } else if (discountPct > 0) {
     score = 65;
     verdict = "GERAS";
     risk = "ŽEMAS";
-    reason = `Šiek tiek pigiau nei įprastai rinkoje.`;
+    reason = `Šiek tiek pigiau nei rinkoje.`;
   } else if (discountPct < -10) {
     score = 25;
     verdict = "PRASTAS";
     risk = "ŽEMAS";
-    reason = `Kaina yra pastebimai užkelta virš rinkos vidurkio.`;
+    reason = `Kaina aukštesnė nei rinkos vidurkis.`;
   }
 
   return { score, verdict, reason, risk };
 }
 
 /**
- * Pagrindinė analizės funkcija (naudojama ir kaip fallback iš skreiperių)
+ * Pagrindinė analizė
  */
 async function analyzeListing(listing) {
   const apiKey = process.env.GEMINI_API_KEY;
 
-  // Jei API raktas neįvestas – iškart vietinė analizė
-  if (!apiKey || apiKey === 'your_gemini_api_key_here' || apiKey.trim() === '') {
+  if (!apiKey) return analyzeLocally(listing);
+
+  try {
+    const response = await axios.post(
+      `${GEMINI_URL}?key=${apiKey}`,
+      {
+        contents: [{
+          parts: [{
+            text: `Įvertink skelbimą: "${listing.title}". Kaina: ${listing.price}€, Rinkos kaina: ${listing.market_price}. Grąžink TIK JSON: {"score":..,"verdict":"..","reason":"..","risk":".."}.`
+          }]
+        }],
+        generationConfig: { temperature: 0.1 }
+      },
+      { timeout: 6000 }
+    );
+
+    let text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
+    text = text.replace(/^```json/i, '').replace(/```$/, '').trim();
+
+    return JSON.parse(text);
+
+  } catch (err) {
     return analyzeLocally(listing);
   }
-
-  const retries = 3;
-  for (let i = 0; i < retries; i++) {
-    try {
-      const response = await axios.post(
-        `${GEMINI_URL}?key=${apiKey}`,
-        {
-          contents: [{
-            parts: [{
-              text: `Įvertink Vinted/Skelbiu skelbimą: "${listing.title}". Kaina: ${listing.price}€, Rinkos kaina: ${listing.market_price || 'nežinoma'}€. Aprašymas: "${listing.description || ''}". Grąžink griežtai TIK JSON formatu (be jokių markdown \`\`\` blokų): {"score":<skaičius 0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lietuviškai kodėl toks balas>","risk":"<ŽEMAS|VIDUTINIS|AUKŠTAS>"}`
-            }]
-          }],
-          generationConfig: {
-            temperature: 0.1,
-            maxOutputTokens: 250
-          }
-        },
-        { timeout: 8000 }
-      );
-
-      let text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '';
-
-      text = text
-        .replace(/^```json\s*/i, '')
-        .replace(/^```/i, '')
-        .replace(/```$/, '')
-        .trim();
-
-      const parsedJson = JSON.parse(text);
-
-      if (parsedJson.score !== undefined && parsedJson.verdict) {
-        return parsedJson;
-      }
-
-      throw new Error("Nepilnas JSON atsakas iš AI");
-    } catch (err) {
-      const status = err.response?.status;
-
-      if (status === 429 || status === 503) {
-        const waitTime = Math.pow(2, i) * 4000;
-        console.warn(`[AI Analyzer] Gemini limitas pasiektas (${status}). Bandymas ${i + 1}/${retries}. Laukiam ${waitTime}ms...`);
-        if (i < retries - 1) {
-          await new Promise(resolve => setTimeout(resolve, waitTime));
-          continue;
-        }
-      } else {
-        console.error(`[AI Analyzer] Klaida siunčiant užklausą į Gemini:`, err.message);
-        break;
-      }
-    }
-  }
-
-  console.log(`[AI Analyzer] Gemini nepavyko suveikti. Naudojama vietinė analizė skelbimui: "${listing.title}"`);
-  return analyzeLocally(listing);
 }
 
 /**
- * Suderinamumo sluoksnis skreiperiams:
- * skelbiu.js ir vinted.js kviečia analyzeWithGemini(listingData)
+ * Suderinamumas su skreiperiais
  */
-async function analyzeWithGemini(listingData) {
-  // Tiesiog peradresuojam į analyzeListing
-  return analyzeListing(listingData);
+async function analyzeWithGemini(listing) {
+  return analyzeListing(listing);
 }
 
 module.exports = {
   analyzeListing,
   analyzeWithGemini,
   estimateMarketPrice,
-  detectCategory,
+  detectCategory
 };
