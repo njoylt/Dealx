@@ -23,4 +23,5 @@ jobs:
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           RENDER_API_URL: ${{ secrets.RENDER_API_URL }}
+          SCRAPINGBEE_API_KEY: ${{ secrets.SCRAPINGBEE_API_KEY }}
         run: node scrapers/run-actions.js
