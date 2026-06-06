@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-// Naudojame stabilią v1 versiją, kuri palaiko nemokamą gemini-1.5-flash modelį
+// Naudojame stabilią v1 versiją
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
 const MARKET_PRICES = {
@@ -50,19 +50,25 @@ async function analyzeWithGemini(listing) {
       {
         contents: [{ 
           parts: [{ 
-            text: `Įvertink skelbimą: "${listing.title}", kaina: ${listing.price}€, rinkos kaina: ${listing.market_price || '?'}€. Grąžink TIK JSON formatu: {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>","risk":"<ŽEMAS|VIDUTINIS|AUKŠTAS>"}` 
+            text: `Įvertink skelbimą: "${listing.title}", kaina: ${listing.price}€, rinkos kaina: ${listing.market_price || '?'}€. Grąžink TIK gryną JSON objektą be jokių markdown formatavimų (be \`\`\`json): {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>","risk":"<ŽEMAS|VIDUTINIS|AUKŠTAS>"}` 
           }] 
         }],
         generationConfig: { 
-          temperature: 0.2, 
-          maxOutputTokens: 150,
-          responseMimeType: "application/json" // Pakeista iš response_mime_type į responseMimeType, kad v1 API priimtų užklausą
+          temperature: 0.1, 
+          maxOutputTokens: 200
+          // Pašalintas kaprizingas responseMimeType fieldas
         }
       },
       { timeout: 8000 }
     );
 
-    const text = response.data.candidates[0].content.parts[0].text.trim();
+    let text = response.data.candidates[0].content.parts[0].text.trim();
+    
+    // Apsauga: jei modelis vis tiek grąžino tekstą su ```json ... ```, išvalome jį
+    if (text.startsWith('```')) {
+      text = text.replace(/^```json\s*/i, '').replace(/```$/, '').trim();
+    }
+
     return JSON.parse(text);
   } catch (err) {
     console.error('Gemini klaida:', err.response ? `${err.response.status} - ${JSON.stringify(err.response.data)}` : err.message);
