@@ -1,6 +1,6 @@
 const axios = require('axios');
 
-// Naudojame stabilią v1 versiją, kuri puikiai palaiko nemokamą gemini-1.5-flash modelį
+// Naudojame stabilią v1 versiją, kuri palaiko nemokamą gemini-1.5-flash modelį
 const GEMINI_URL = 'https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent';
 
 const MARKET_PRICES = {
@@ -50,4 +50,38 @@ async function analyzeWithGemini(listing) {
       {
         contents: [{ 
           parts: [{ 
-            text: `Įvertink skelbimą: "${listing.title}", kaina: ${listing.price}€, rinkos kaina: ${listing.market_price || '?'}€. Grąžink TIK JSON formatu (be jokių markdown \`\`\`json apvalkalų): {"score":<0-100>,"
+            text: `Įvertink skelbimą: "${listing.title}", kaina: ${listing.price}€, rinkos kaina: ${listing.market_price || '?'}€. Grąžink TIK JSON formatu: {"score":<0-100>,"verdict":"<IŠSKIRTINIS|PUIKUS|GERAS|VIDUTINIS|PRASTAS>","reason":"<1 sakinys lt>","risk":"<ŽEMAS|VIDUTINIS|AUKŠTAS>"}` 
+          }] 
+        }],
+        generationConfig: { 
+          temperature: 0.2, 
+          maxOutputTokens: 150,
+          response_mime_type: "application/json"
+        }
+      },
+      { timeout: 8000 }
+    );
+
+    const text = response.data.candidates[0].content.parts[0].text.trim();
+    return JSON.parse(text);
+  } catch (err) {
+    console.error('Gemini klaida:', err.response ? `${err.response.status} - ${JSON.stringify(err.response.data)}` : err.message);
+  }
+  return analyzeLocally(listing);
+}
+
+function analyzeLocally(listing) {
+  const mp = listing.market_price;
+  let score = 50, verdict = 'VIDUTINIS', reason = 'Standartinė rinkos kaina.';
+  if (mp && listing.price) {
+    const d = ((mp - listing.price) / mp) * 100;
+    if (d >= 40) { score = 88 + Math.random()*12; verdict = 'IŠSKIRTINIS'; reason = `Kaina ${Math.round(d)}% žemiau rinkos!`; }
+    else if (d >= 25) { score = 75 + Math.random()*13; verdict = 'PUIKUS'; reason = `Kaina ${Math.round(d)}% žemiau rinkos.`; }
+    else if (d >= 10) { score = 60 + Math.random()*15; verdict = 'GERAS'; reason = `Šiek tiek pigiau.`; }
+    else if (d >= -5) { score = 40 + Math.random()*20; verdict = 'VIDUTINIS'; reason = `Atitinka rinkos kainą.`; }
+    else { score = 15 + Math.random()*25; verdict = 'PRASTAS'; reason = `Kaina per aukšta.`; }
+  }
+  return { score: Math.round(score), verdict, reason, risk: score > 70 ? 'ŽEMAS' : score > 40 ? 'VIDUTINIS' : 'AUKŠTAS' };
+}
+
+module.exports = { analyzeWithGemini, estimateMarketPrice, detectCategory };
